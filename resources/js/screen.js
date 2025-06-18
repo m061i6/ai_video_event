@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 window.wordList = [];
 window.wordFreq = {};
 window.wordMeta = {}; // 新增：記錄每個關鍵字的位置與角度
+window.wordColor = {}; // 關鍵字顏色記憶：每個關鍵字第一次分配顏色後就固定
 let countdown = 60;
 let timer = null;
 let wsListener = null;
@@ -117,6 +118,25 @@ function addKeyword(word) {
     updateWordCloud();
 }
 
+// 好看的配色組
+const colorPalette = [
+    '#00FF00', // 螢光綠
+    '#00BFFF', // 深天藍
+    '#FF69B4', // 粉紅
+    '#FFD700', // 金黃
+    '#FF4500', // 橘紅
+    '#7CFC00', // 草綠
+    '#1E90FF', // 道奇藍
+    '#FF6347', // 番茄紅
+    '#8A2BE2', // 藍紫
+    '#FF1493', // 深粉紅
+    '#40E0D0', // 青綠
+    '#FFA500', // 橙色
+    '#ADFF2F', // 黃綠
+    '#00CED1', // 深青
+    '#C71585'  // 紫紅
+];
+
 // 重新渲染所有關鍵字
 function updateWordCloud() {
     wordCloudDiv.innerHTML = '';
@@ -129,7 +149,13 @@ function updateWordCloud() {
         else if (displayText.length >= 3) sizeClass = 'text-5xl';
         const span = document.createElement('span');
         span.textContent = displayText;
-        span.className = `absolute pointer-events-none text-[#00FF00] font-mono cloudword ${sizeClass}`;
+        // 固定顏色：第一次分配後就記住
+        if (!window.wordColor[word]) {
+            window.wordColor[word] = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+        }
+        const color = window.wordColor[word];
+        span.className = `absolute pointer-events-none font-mono cloudword ${sizeClass}`;
+        span.style.color = color;
         span.style.left = meta.left + 'px';
         span.style.top = meta.top + 'px';
         span.style.transform = `rotate(0deg)`;
