@@ -17,11 +17,11 @@ class KeywordController extends Controller
         $sessionId = $request->session()->getId();
         $ip = $request->ip();
 
-        // 1. 格式檢查
-        $filtered = preg_replace('/[^\x{4e00}-\x{9fff}a-zA-Z]/u', '', $keyword);
-        if (mb_strlen($filtered) < 2 || mb_strlen($filtered) > 8) {
-            return response()->json(['message' => '格式錯誤，請輸入 2~8 個繁中或英文（不可含數字）'], 400);
+        // 1. 格式檢查（只允許繁中與英文，其他一律不給過）
+        if (!preg_match('/^[\x{4e00}-\x{9fff}a-zA-Z]{2,8}$/u', $keyword)) {
+            return response()->json(['message' => '格式錯誤，請輸入 2~8 個繁中或英文（不可含數字、標點、符號）'], 400);
         }
+        $filtered = $keyword;
 
         // 2. 重複檢查
         $exists = Keyword::where('session_id', $sessionId)
