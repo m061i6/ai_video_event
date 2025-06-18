@@ -8,6 +8,7 @@ let countdown = 60;
 let timer = null;
 let wsListener = null;
 let stageEnded = false;
+let pendingOverlay = null;
 
 const qrUrl = window.location.origin + '/';
 const qrWrapper = document.getElementById('qrWrapper');
@@ -78,7 +79,8 @@ function startCountdown() {
         countdownDiv.textContent = countdown;
         if (countdown <= 0) {
             clearInterval(timer);
-            endStage();
+            showPendingOverlay('劇本產出中');
+            generateScriptsAndRedirect();
         }
     }, 1000);
 }
@@ -112,10 +114,10 @@ function addKeyword(word) {
         const top = rect.y + padding + Math.random() * (rect.h - 60 - padding * 2);
         const rotate = 0; // 固定為0度
         window.wordMeta[word] = { left, top, rotate, gridIdx };
+        updateWordCloud(word);
     } else {
         window.wordFreq[word]++;
     }
-    updateWordCloud();
 }
 
 // 好看的配色組
@@ -138,22 +140,21 @@ const colorPalette = [
 ];
 
 // 重新渲染所有關鍵字
-function updateWordCloud() {
-    wordCloudDiv.innerHTML = '';
-    window.wordList.forEach(word => {
-        const meta = window.wordMeta[word];
-        const displayText = word.slice(0, 8);
+function updateWordCloud(newWord = null) {
+    if (newWord) {
+        // 只新增新關鍵字
+        const meta = window.wordMeta[newWord];
+        const displayText = newWord.slice(0, 8);
         let sizeClass = 'text-6xl';
         if (displayText.length >= 7) sizeClass = 'text-3xl';
         else if (displayText.length >= 5) sizeClass = 'text-4xl';
         else if (displayText.length >= 3) sizeClass = 'text-5xl';
         const span = document.createElement('span');
         span.textContent = displayText;
-        // 固定顏色：第一次分配後就記住
-        if (!window.wordColor[word]) {
-            window.wordColor[word] = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+        if (!window.wordColor[newWord]) {
+            window.wordColor[newWord] = colorPalette[Math.floor(Math.random() * colorPalette.length)];
         }
-        const color = window.wordColor[word];
+        const color = window.wordColor[newWord];
         span.className = `absolute pointer-events-none font-mono cloudword ${sizeClass}`;
         span.style.color = color;
         span.style.left = meta.left + 'px';
@@ -165,7 +166,14 @@ function updateWordCloud() {
         setTimeout(() => {
             span.style.animation = 'breath 1.6s infinite alternate';
         }, 100);
-    });
+    } else {
+        // 初始化時才渲染全部
+        wordCloudDiv.innerHTML = '';
+        window.wordList.forEach(word => {
+            if (document.querySelector(`.cloudword[data-word='${word}']`)) return;
+            updateWordCloud(word);
+        });
+    }
 }
 
 // 呼吸動畫 keyframes
@@ -177,27 +185,103 @@ style.innerHTML = `
 }`;
 document.head.appendChild(style);
 
+// 顯示 pending 畫面
+function showPending(status = 'pending') {
+    let pendingDiv = document.getElementById('pendingScriptDiv');
+    if (!pendingDiv) {
+        pendingDiv = document.createElement('div');
+        pendingDiv.id = 'pendingScriptDiv';
+        pendingDiv.style.position = 'fixed';
+        pendingDiv.style.left = '0';
+        pendingDiv.style.top = '0';
+        pendingDiv.style.width = '100vw';
+        pendingDiv.style.height = '100vh';
+        pendingDiv.style.background = '#000';
+        pendingDiv.style.zIndex = '9999';
+        pendingDiv.style.display = 'flex';
+        pendingDiv.style.flexDirection = 'column';
+        pendingDiv.style.justifyContent = 'center';
+        pendingDiv.style.alignItems = 'center';
+        pendingDiv.style.transition = 'opacity 0.5s';
+        document.body.appendChild(pendingDiv);
+    }
+    pendingDiv.innerHTML = `<div style="color:#fff;font-size:3rem;font-weight:bold;letter-spacing:0.2em;">${status === 'pending' ? '劇本產出中' : '劇本產出完成'}</div>`;
+}
+
+function showPendingOverlay(text = '劇本產出中') {
+    if (!pendingOverlay) {
+        pendingOverlay = document.createElement('div');
+        pendingOverlay.id = 'pendingOverlay';
+        pendingOverlay.className = 'fixed inset-0 bg-black bg-opacity-100 flex flex-col items-center justify-center z-[1000]';
+        pendingOverlay.innerHTML = `<div class="text-white text-5xl font-bold mb-8 animate-pulse">${text}</div>`;
+        document.body.appendChild(pendingOverlay);
+    } else {
+        pendingOverlay.innerHTML = `<div class="text-white text-5xl font-bold mb-8 animate-pulse">${text}</div>`;
+        pendingOverlay.style.display = 'flex';
+    }
+}
+
+function hidePendingOverlay() {
+    if (pendingOverlay) pendingOverlay.style.display = 'none';
+}
+
+// 產生劇本並導向新頁面
+async function generateScriptsAndRedirect() {
+    showPendingOverlay('劇本產出中');
+    try {
+        const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        const res = await fetch('/api/generate-scripts?test=1', {
+            method: 'POST',
+            headers: token ? { 'X-CSRF-TOKEN': token } : {},
+            credentials: 'same-origin'
+        });
+        if (!res.ok) throw new Error('API error');
+        const data = await res.json();
+        showPendingOverlay('劇本產出完成');
+        setTimeout(() => {
+            window.location.href = `/scripts/result?ids=${data.ids.join(',')}`;
+        }, 1200);
+    } catch (e) {
+        showPendingOverlay('產生失敗，請重試');
+        setTimeout(() => { hidePendingOverlay(); }, 2000);
+    }
+}
+
 // 結束動畫
 function endStage() {
     stageEnded = true;
-    qrWrapper.style.display = 'none';
-    countdownDiv.style.display = 'none';
-    if (wsListener) window.Echo.leave('keywords');
+    // QRCode、倒數、關鍵字全部淡出
+    qrWrapper.style.transition = 'opacity 1.2s';
+    qrWrapper.style.opacity = '0';
+    countdownDiv.style.transition = 'opacity 1.2s';
+    countdownDiv.style.opacity = '0';
     const words = document.querySelectorAll('.cloudword');
-    words.forEach((el, i) => {
-        el.style.transition = 'all 1.2s cubic-bezier(0.87,0,0.13,1)';
-        el.style.transform = 'scale(1.2) rotate(720deg)';
+    words.forEach((el) => {
+        el.style.transition = 'opacity 1.2s';
+        el.style.opacity = '0';
     });
     setTimeout(() => {
-        words.forEach(el => {
-            el.style.transition = 'all 1.2s cubic-bezier(0.87,0,0.13,1)';
-            el.style.transform = 'translateY(-100vh) scale(0.3)';
-            el.style.opacity = '0';
-        });
-        setTimeout(() => {
-            wordCloudDiv.innerHTML = '';
-            window.dispatchEvent(new Event('stage1Complete'));
-        }, 1200);
+        wordCloudDiv.innerHTML = '';
+        // 顯示 pending 畫面並呼叫後端產生劇本
+        showPending('pending');
+        const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        fetch('/api/generate-scripts', {
+            method: 'POST',
+            headers: token ? { 'X-CSRF-TOKEN': token } : {},
+            credentials: 'same-origin'
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'done') {
+                    showPending('done');
+                    setTimeout(() => {
+                        window.location.href = '/scripts';
+                    }, 1200);
+                } else {
+                    showPending('error');
+                }
+            })
+            .catch(() => showPending('error'));
     }, 1300);
 }
 

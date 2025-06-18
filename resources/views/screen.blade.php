@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>AI 影片活動 - 關鍵字雲</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     @vite(['resources/css/app.css', 'resources/js/screen.js'])
     <script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.min.js"></script>
